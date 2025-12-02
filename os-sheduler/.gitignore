@@ -1,0 +1,41 @@
+# Node / JS
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Logs
+logs/
+*.log
+
+# Environment
+.env
+.env.*.local
+
+# Build outputs
+dist/
+build/
+out/
+.vite/
+.cache/
+coverage/
+
+# Scheduler C build artifacts
+/scheduler-c/bin/
+/scheduler-c/build/
+*.o
+*.d
+*.out
+
+# Editor and OS files
+.vscode/
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Backups
+*.bak
+

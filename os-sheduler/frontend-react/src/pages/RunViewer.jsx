@@ -256,55 +256,54 @@ export default function RunViewer() {
         </div>
 
         {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column - Gantt and Playback */}
-          <div className="lg:col-span-2 space-y-6">
-            <Gantt
-              segments={segments}
-              currentTick={playback.currentTick}
-            />
+        <div className="space-y-6">
+          {/* Gantt Chart - Full Width */}
+          <Gantt
+            segments={segments}
+            currentTick={playback.currentTick}
+          />
 
-            <PlaybackControls
-              isPlaying={playback.isPlaying}
-              currentTick={playback.currentTick}
-              maxTick={playback.maxTick}
-              speed={playback.speed}
-              loop={playback.loop}
-              progress={playback.progress}
-              onTogglePlay={playback.togglePlay}
-              onStop={playback.stop}
-              onStepForward={playback.stepForward}
-              onStepBackward={playback.stepBackward}
-              onJumpToTick={playback.jumpToTick}
-              onSetSpeed={playback.setSpeed}
-              onToggleLoop={playback.toggleLoop}
-            />
+          {/* Playback Controls - Full Width */}
+          <PlaybackControls
+            isPlaying={playback.isPlaying}
+            currentTick={playback.currentTick}
+            maxTick={playback.maxTick}
+            speed={playback.speed}
+            loop={playback.loop}
+            progress={playback.progress}
+            onTogglePlay={playback.togglePlay}
+            onStop={playback.stop}
+            onStepForward={playback.stepForward}
+            onStepBackward={playback.stepBackward}
+            onJumpToTick={playback.jumpToTick}
+            onSetSpeed={playback.setSpeed}
+            onToggleLoop={playback.toggleLoop}
+          />
 
-            {/* Process State Monitor - moved above terminal */}
+          {/* Process State Monitor + Run Controls & Console - Side by Side */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <QueueInspector
               events={events}
               currentTick={run.status === 'running' ? liveStats.currentTick : playback.currentTick}
             />
+            <div className="space-y-6">
+              <RunControls
+                runId={id}
+                runStatus={run.status}
+                onUpdate={loadRunData}
+              />
+              <LiveConsole messages={stderrMessages} />
+            </div>
+          </div>
 
-            {/* Terminal-Style Event Log */}
-            <TerminalLog events={events} />
-
+          {/* Event List + Terminal Log - Side by Side */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <EventList events={playback.currentEvents} />
-
-            {summary && <SummaryTable summary={summary} />}
+            <TerminalLog events={events} />
           </div>
 
-          {/* Right Column - Console, Controls */}
-          <div className="space-y-6">
-
-            <LiveConsole messages={stderrMessages} />
-
-            <RunControls
-              runId={id}
-              runStatus={run.status}
-              onUpdate={loadRunData}
-            />
-          </div>
+          {/* Summary Table - Full Width */}
+          {summary && <SummaryTable summary={summary} />}
         </div>
       </div>
     </div>

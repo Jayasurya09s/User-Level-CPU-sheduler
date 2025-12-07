@@ -1,15 +1,24 @@
 # Node / JS
 node_modules/
+package-lock.json
 npm-debug.log*
 yarn-debug.log*
+yarn.lock
 pnpm-debug.log*
+pnpm-lock.yaml
+.yarn/
 
 # Logs
 logs/
 *.log
+lerna-debug.log*
 
 # Environment
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 .env.*.local
 
 # Build outputs
@@ -17,25 +26,62 @@ dist/
 build/
 out/
 .vite/
+.next/
+.nuxt/
 .cache/
 coverage/
+*.tsbuildinfo
+
+# Frontend specific
+/frontend-react/dist/
+/frontend-react/build/
+/frontend-react/.vite/
+
+# Backend specific
+/backend-node/dist/
+/backend-node/uploads/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
 
 # Scheduler C build artifacts
-/scheduler-c/bin/
-/scheduler-c/build/
+../scheduler-c/bin/
+../scheduler-c/build/
 *.o
 *.d
 *.out
+*.exe
 
 # Editor and OS files
 .vscode/
 !.vscode/extensions.json
+!.vscode/settings.json
 .idea/
+*.sublime-workspace
+*.sublime-project
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 *.swp
+*.swo
 *~
+.project
+.classpath
+.settings/
 
-# Backups
+# Temporary files
+*.tmp
+*.temp
 *.bak
+*.backup
+
+# Testing
+.nyc_output/
+
+# Misc
+*.pid
+*.seed
+*.pid.lock
 

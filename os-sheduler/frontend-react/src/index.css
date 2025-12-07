@@ -1,6 +1,8 @@
+/* postcss-ignore-start */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/* postcss-ignore-end */
 
 /* CSS Variables for theme colors */
 :root {

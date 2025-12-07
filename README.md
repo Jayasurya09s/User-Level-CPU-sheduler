@@ -1,4 +1,4 @@
-# 🚀 CPU Scheduler Simulator
+#  CPU Scheduler Simulator
 
 A comprehensive **User-Level CPU Scheduler** with real-time visualization. Built with C, Node.js, and React, this educational tool simulates 7 scheduling algorithms with live Gantt charts, event logs, and performance metrics.
 

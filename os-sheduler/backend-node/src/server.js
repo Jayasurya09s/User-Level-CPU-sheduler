@@ -262,13 +262,16 @@ app.post("/runs/:id/stop", async (req, res) => {
 app.get("/runs", async (req, res) => {
   try {
     const rows = await allAsync(
-      `SELECT id, algorithm, args, status, started_at, finished_at
-       FROM runs ORDER BY id DESC LIMIT 200`
+      `SELECT id, algorithm, args, status, started_at, finished_at, summary_json
+       FROM runs ORDER BY id DESC`
     );
     res.json(
       rows.map(r => {
         try {
           r.args = JSON.parse(r.args);
+        } catch {}
+        try {
+          r.summary_json = r.summary_json ? JSON.parse(r.summary_json) : null;
         } catch {}
         return r;
       })

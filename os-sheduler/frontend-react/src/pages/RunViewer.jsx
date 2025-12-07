@@ -1,256 +1,310 @@
-// src/pages/RunViewer.jsx
-import React, { useEffect, useState, useRef } from "react";
-import { useParams } from "react-router-dom";
-import axios from "axios";
+/**
+ * RunViewer Page
+ * Real-time dashboard for viewing running/completed simulations
+ */
 
-const API = process.env.REACT_APP_API_HOST || "http://localhost:3001";
-
-function humanizeEvent(ev) {
-  if (!ev || typeof ev !== "object") return String(ev);
-
-  const type = ev.event || ev.raw || "unknown";
-  // Choose important keys to display per event type
-  switch (type) {
-    case "gantt_slice":
-      return `tick ${ev.tick}: PID ${ev.pid} running — remaining=${ev.remaining}${ev.quantum_left !== undefined ? `, quantum_left=${ev.quantum_left}` : ""}${ev.mlfq_level !== undefined ? `, level=${ev.mlfq_level}` : ""}`;
-    case "context_switch":
-      return `tick ${ev.tick}: context switch -> PID ${ev.pid} (burst=${ev.burst}, remaining=${ev.remaining}, priority=${ev.priority})`;
-    case "job_started":
-      return `tick ${ev.tick}: job started PID ${ev.pid} (arrival=${ev.arrival}, burst=${ev.burst})`;
-    case "job_resumed":
-      return `tick ${ev.tick}: job arrived/resumed PID ${ev.pid} (arrival=${ev.arrival})`;
-    case "job_finished":
-      return `tick ${ev.tick}: job finished PID ${ev.pid} (turnaround finished, remaining=${ev.remaining})`;
-    case "job_preempted":
-      return `tick ${ev.tick}: job preempted PID ${ev.pid} (reason=${ev.reason || ev.preempted_by || "unknown"})`;
-    case "tick":
-      return `tick ${ev.tick}`;
-    default:
-      // fallback — pick a few keys
-      const keys = Object.keys(ev).filter(k => k !== "event" && k !== "tick");
-      const kv = keys.map(k => `${k}=${JSON.stringify(ev[k])}`).join(", ");
-      return `tick ${ev.tick || "?"}: ${type} ${kv}`;
-  }
-}
-
-function buildGanttFromEvents(events) {
-  // We'll derive each process' slices from gantt_slice and job_started/job_finished
-  // gather per-pid list of ticks when it ran
-  const slicesByPid = new Map();
-  events.forEach(e => {
-    const ev = e.event || e;
-    if (!ev) return;
-    if (ev.event === "gantt_slice" && typeof ev.pid !== "undefined") {
-      if (!slicesByPid.has(ev.pid)) slicesByPid.set(ev.pid, []);
-      // each gantt_slice is a single tick; collect tick
-      slicesByPid.get(ev.pid).push(ev.tick);
-    } else if (ev.event === "job_started") {
-      // ensure pid exists even if no slices recorded
-      if (!slicesByPid.has(ev.pid)) slicesByPid.set(ev.pid, []);
-    } else if (ev.event === "job_resumed") {
-      if (!slicesByPid.has(ev.pid)) slicesByPid.set(ev.pid, []);
-    }
-  });
-
-  // Convert each pid tick list into contiguous spans [start, end]
-  const spansByPid = [];
-  let minTick = Infinity, maxTick = 0;
-  for (const [pid, ticks] of slicesByPid.entries()) {
-    if (!ticks || ticks.length === 0) {
-      spansByPid.push({ pid, spans: [] });
-      continue;
-    }
-    const sorted = Array.from(new Set(ticks)).sort((a,b)=>a-b);
-    let curStart = sorted[0], curEnd = sorted[0];
-    minTick = Math.min(minTick, curStart);
-    maxTick = Math.max(maxTick, sorted[sorted.length - 1]);
-    for (let i = 1; i < sorted.length; ++i) {
-      const t = sorted[i];
-      if (t === curEnd + 1) {
-        curEnd = t;
-      } else {
-        spansByPid.push({ pid, span: [curStart, curEnd] });
-        curStart = curEnd = t;
-      }
-      minTick = Math.min(minTick, t);
-      maxTick = Math.max(maxTick, t);
-    }
-    // push final
-    spansByPid.push({ pid, span: [curStart, curEnd] });
-  }
-
-  // join spans per pid
-  const map = new Map();
-  spansByPid.forEach(item => {
-    const pid = item.pid;
-    const span = item.span;
-    if (!map.has(pid)) map.set(pid, []);
-    map.get(pid).push(span);
-  });
-
-  // produce array sorted by pid ascending
-  const out = Array.from(map.entries()).sort((a,b)=>a[0]-b[0]).map(([pid, spans]) => ({ pid, spans }));
-  // handle case no events: minTick/maxTick fallback
-  if (minTick === Infinity) { minTick = 0; maxTick = 0; }
-
-  return { rows: out, minTick, maxTick };
-}
+import React, { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { getRun, getRunEvents, getRunSummary } from '../utils/api';
+import { useWebSocket } from '../hooks/useWebSocket';
+import { useGanttData } from '../hooks/useGanttData';
+import { usePlayback } from '../hooks/usePlayback';
+import { formatSummary } from '../utils/summaryUtils';
+import Gantt from '../components/Gantt';
+import EventList from '../components/EventList';
+import PlaybackControls from '../components/PlaybackControls';
+import QueueInspector from '../components/QueueInspector';
+import SummaryTable from '../components/SummaryTable';
+import LiveConsole from '../components/LiveConsole';
+import RunControls from '../components/RunControls';
+import TerminalLog from '../components/TerminalLog';
 
 export default function RunViewer() {
   const { id } = useParams();
   const [run, setRun] = useState(null);
   const [events, setEvents] = useState([]);
-  const wsRef = useRef(null);
-
-  // load run + events once
-  useEffect(() => {
-    let mounted = true;
-    axios.get(`${API}/runs/${id}`).then(r => { if (mounted) setRun(r.data); }).catch(()=>{});
-    axios.get(`${API}/runs/${id}/events`).then(r => { if (mounted) setEvents(r.data || []); }).catch(()=>{});
-
-    // set up WS to receive live events
-    const wsproto = (API.startsWith("https") ? "wss" : "ws");
-    const host = API.replace(/^https?:\/\//, '');
-    try {
-      const ws = new WebSocket(`${wsproto}://${host}`);
-      ws.onmessage = (msg) => {
-        try {
-          const m = JSON.parse(msg.data);
-          if (m.type === "event" && m.run_id === Number(id)) {
-            // attach id and tick similar to rest API
-            setEvents(prev => [...prev, { id: Date.now(), tick: m.event.tick || null, event: m.event }]);
-          }
-          if (m.type === "run_finished" && m.run_id === Number(id)) {
-            axios.get(`${API}/runs/${id}`).then(r => setRun(r.data));
-          }
-        } catch (e) {}
-      };
-      wsRef.current = ws;
-    } catch (e) {
-      console.warn("ws error", e);
-    }
-
-    return () => {
-      mounted = false;
-      if (wsRef.current) wsRef.current.close();
-    };
-  }, [id]);
-
-  // produce human events for UI
-  const humanEvents = events.map((ev, idx) => {
-    const eventObj = ev.event || ev;
-    // event tick may be top-level too
-    const tick = ev.tick ?? eventObj?.tick ?? null;
-    return {
-      id: ev.id ?? idx,
-      tick,
-      type: (eventObj && (eventObj.event || eventObj.raw)) || "raw",
-      human: humanizeEvent(eventObj)
-    };
+  const [stderrMessages, setStderrMessages] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [liveStats, setLiveStats] = useState({
+    currentTick: 0,
+    runningProcess: null,
+    readyQueue: [],
+    pendingProcesses: [],
+    completedProcesses: []
   });
 
-  // Gantt data
-  const { rows, minTick, maxTick } = buildGanttFromEvents(events);
+  // WebSocket connection
+  useWebSocket({
+    runId: id,
+    onEvent: (event) => {
+      // Normalize: scheduler uses "event" field, frontend expects "type"
+      if (event.event && !event.type) {
+        event.type = event.event;
+      }
+      
+      // Update live stats based on event type
+      if (event.tick !== undefined) {
+        setLiveStats(prev => {
+          const updated = { ...prev, currentTick: event.tick };
+          
+          // Update running process
+          if (event.type === 'job_started' || event.type === 'job_resumed') {
+            updated.runningProcess = event.pid;
+          } else if (event.type === 'job_finished' || event.type === 'job_preempted') {
+            updated.runningProcess = null;
+          }
+          
+          // Track completed processes
+          if (event.type === 'job_finished' && event.pid !== undefined) {
+            if (!updated.completedProcesses.includes(event.pid)) {
+              updated.completedProcesses = [...updated.completedProcesses, event.pid];
+            }
+          }
+          
+          // Update ready queue if available
+          if (event.ready_queue) {
+            updated.readyQueue = event.ready_queue;
+          }
+          
+          return updated;
+        });
+      }
+      
+      setEvents(prev => {
+        // Add all events for live display
+        return [...prev, event];
+      });
+    },
+    onStderr: (message) => {
+      setStderrMessages(prev => [...prev, message]);
+    },
+    onRunFinished: async (message) => {
+      console.log('Run finished:', message);
+      await loadRunData();
+    },
+    onRunKilled: () => {
+      console.log('Run killed');
+      loadRunData();
+    }
+  });
 
-  // render scale labels
-  const ticks = [];
-  for (let t = minTick; t <= maxTick; ++t) ticks.push(t);
+  // Load initial data
+  useEffect(() => {
+    loadRunData();
+  }, [id]);
+
+  const loadRunData = async () => {
+    try {
+      setIsLoading(true);
+
+      // Load run details
+      const runData = await getRun(id);
+      setRun(runData);
+
+      // Load events and transform to expected format
+      const eventsData = await getRunEvents(id);
+      const transformedEvents = (eventsData || []).map(item => {
+        const event = item.event || {};
+        // Normalize: scheduler uses "event" field, frontend expects "type"
+        if (event.event && !event.type) {
+          event.type = event.event;
+        }
+        return {
+          ...event,
+          tick: item.tick,
+          id: item.id,
+          created_at: item.created_at
+        };
+      });
+      setEvents(transformedEvents);
+      
+      // Calculate initial live stats from loaded events
+      if (transformedEvents.length > 0) {
+        const lastTick = Math.max(...transformedEvents.map(e => e.tick || 0));
+        const completed = transformedEvents
+          .filter(e => e.type === 'job_finished')
+          .map(e => e.pid)
+          .filter((v, i, a) => a.indexOf(v) === i);
+        
+        setLiveStats(prev => ({
+          ...prev,
+          currentTick: lastTick,
+          completedProcesses: completed
+        }));
+      }
+
+      // Load summary if available
+      if (runData.status === 'finished' || runData.status === 'completed') {
+        try {
+          const summaryData = await getRunSummary(id);
+          setSummary(formatSummary(summaryData));
+        } catch (error) {
+          console.log('Summary not available yet');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load run data:', error);
+      alert('Failed to load run data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Gantt data
+  const { segments, stats } = useGanttData(events);
+
+  // Playback controls
+  const playback = usePlayback(events, stats.totalTime);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-8 flex items-center justify-center">
+        <div className="text-xl text-gray-600 dark:text-gray-400">Loading run...</div>
+      </div>
+    );
+  }
+
+  if (!run) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-8 flex items-center justify-center">
+        <div className="text-xl text-gray-600 dark:text-gray-400">Run not found</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6">
-      <h2 className="text-2xl mb-3">Run {id}</h2>
-
-      {run && (
-        <div className="mb-4">
-          <div className="mb-1">Algorithm: <strong>{run.algorithm}</strong> &nbsp;|&nbsp; Status: <strong>{run.status}</strong></div>
-          {run.summary_json && <pre style={{ maxWidth: 900, overflowX: "auto", background: "#f1f5f9", padding: 8 }}>{JSON.stringify(run.summary_json, null, 2)}</pre>}
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+            {run.algorithm} Simulation
+          </h1>
+          <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+            <span>Run ID: {run.id}</span>
+            <span>•</span>
+            <span className={`px-2 py-1 rounded text-xs font-medium ${
+              run.status === 'running' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+              run.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+              'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+            }`}>
+              {run.status}
+            </span>
+            {run.args?.quantum && (
+              <>
+                <span>•</span>
+                <span>Quantum: {run.args.quantum}</span>
+              </>
+            )}
+          </div>
         </div>
-      )}
 
-      {/* GANTT */}
-      <div style={{ maxWidth: 1100, marginTop: 8 }}>
-        <h3 className="text-lg mb-2">Gantt chart</h3>
-
-        <div className="gantt-frame" style={{ border: "1px solid #e2e8f0", padding: 8, background: "#ffffff" }}>
-          {/* Timeline labels (top) */}
-          <div className="gantt-timeline" style={{ position: "relative", height: 28, marginBottom: 6 }}>
-            <div style={{ position: "absolute", left: 0, top: 0, right: 0, bottom: 0 }}>
-              <div style={{ display: "flex", alignItems: "center" }}>
-                <div style={{ width: 120, textAlign: "left", fontSize: 12, color: "#374151" }}>PID / Process</div>
-                <div style={{ flex: 1, position: "relative", height: 28 }}>
-                  {ticks.map(t => {
-                    const pct = ((t - minTick) / Math.max(1, maxTick - minTick)) * 100;
-                    return <div key={t} style={{ position: "absolute", left: `calc(${pct}% - 8px)`, top: 0, fontSize: 11, color: "#6b7280" }}>{t}</div>;
-                  })}
+        {/* Live Stats Banner - Shows during active simulation */}
+        {run.status === 'running' && (
+          <div className="mb-6 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg shadow-lg p-6 border-2 border-blue-400">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+                <h2 className="text-xl font-bold">🚀 Live Simulation in Progress</h2>
+              </div>
+              <div className="text-sm font-medium bg-white/20 px-3 py-1 rounded-full">
+                Tick: {liveStats.currentTick}
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-white/10 rounded-lg p-3 backdrop-blur-sm">
+                <div className="text-xs text-blue-100 mb-1">Running</div>
+                <div className="text-lg font-bold">
+                  {liveStats.runningProcess !== null ? `P${liveStats.runningProcess}` : 'IDLE'}
                 </div>
+              </div>
+              <div className="bg-white/10 rounded-lg p-3 backdrop-blur-sm">
+                <div className="text-xs text-blue-100 mb-1">Ready Queue</div>
+                <div className="text-lg font-bold">{liveStats.readyQueue.length} processes</div>
+              </div>
+              <div className="bg-white/10 rounded-lg p-3 backdrop-blur-sm">
+                <div className="text-xs text-blue-100 mb-1">Completed</div>
+                <div className="text-lg font-bold">{liveStats.completedProcesses.length} processes</div>
+              </div>
+              <div className="bg-white/10 rounded-lg p-3 backdrop-blur-sm">
+                <div className="text-xs text-blue-100 mb-1">Total Events</div>
+                <div className="text-lg font-bold">{events.length}</div>
               </div>
             </div>
           </div>
+        )}
 
-          {/* Rows */}
-          <div>
-            {rows.length === 0 && <div style={{ padding: 12, color: "#6b7280" }}>No Gantt data available (waiting for events)</div>}
-            {rows.map((r, idx) => (
-              <div key={r.pid} className="gantt-row" style={{ display: "flex", alignItems: "center", minHeight: 34, marginBottom: 6 }}>
-                <div style={{ width: 120, fontWeight: 600, color: "#111827" }}>PID {r.pid}</div>
-                <div style={{ flex: 1, position: "relative", minHeight: 28 }}>
-                  {/* empty background */}
-                  <div style={{ position: "absolute", left: 0, right: 0, top: 8, height: 12, background: "#f3f4f6" }} />
-                  {/* spans */}
-                  {r.spans.map((sp, i) => {
-                    const [s,e] = sp;
-                    const total = Math.max(1, maxTick - minTick + 1);
-                    const leftPct = ((s - minTick) / total) * 100;
-                    const widthPct = ((e - s + 1) / total) * 100;
-                    return (
-                      <div key={i}
-                           title={`PID ${r.pid}: ${s} → ${e}`}
-                           style={{
-                             position: "absolute",
-                             left: `${leftPct}%`,
-                             width: `${widthPct}%`,
-                             top: 0,
-                             height: 28,
-                             borderRadius: 6,
-                             display: "flex",
-                             alignItems: "center",
-                             justifyContent: "center",
-                             padding: "0 6px",
-                             boxSizing: "border-box",
-                             color: "#fff",
-                             fontSize: 12,
-                             fontWeight: 600,
-                             // colorized per pid for clarity
-                             background: `hsl(${(r.pid * 57) % 360} 70% 45%)`,
-                             boxShadow: "0 1px 0 rgba(0,0,0,0.15)"
-                           }}>
-                        {r.pid}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 border border-gray-200 dark:border-gray-700">
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Time</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.totalTime}</div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 border border-gray-200 dark:border-gray-700">
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">CPU Utilization</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.cpuUtilization.toFixed(1)}%</div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 border border-gray-200 dark:border-gray-700">
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Context Switches</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.contextSwitches}</div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 border border-gray-200 dark:border-gray-700">
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Events</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{events.length}</div>
           </div>
         </div>
-      </div>
 
-      {/* EVENTS HISTORY */}
-      <div style={{ marginTop: 20 }}>
-        <h3 className="text-lg mb-2">Events (history)</h3>
-        <div style={{ maxHeight: 420, overflow: "auto", padding: 8, background: "#f8fafc", borderRadius: 6, border: "1px solid #e6eef8" }}>
-          {humanEvents.length === 0 && <div style={{ color: "#6b7280", padding: 8 }}>No events yet.</div>}
-          {humanEvents.slice(-500).reverse().map(ev => (
-            <div key={ev.id} style={{ padding: "8px 10px", marginBottom: 6, borderRadius: 6, background: "#fff", boxShadow: "inset 0 0 0 1px rgba(15,23,42,0.03)", display: "flex", gap: 12 }}>
-              <div style={{ minWidth: 72, textAlign: "right", color: "#6b7280", fontSize: 12 }}>
-                {ev.tick !== null ? `tick ${ev.tick}` : ""}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ color: "#0f172a", fontWeight: 600 }}>{ev.type}</div>
-                <div style={{ color: "#334155", marginTop: 4 }}>{ev.human}</div>
-              </div>
-            </div>
-          ))}
+        {/* Main Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column - Gantt and Playback */}
+          <div className="lg:col-span-2 space-y-6">
+            <Gantt
+              segments={segments}
+              currentTick={playback.currentTick}
+            />
+
+            <PlaybackControls
+              isPlaying={playback.isPlaying}
+              currentTick={playback.currentTick}
+              maxTick={playback.maxTick}
+              speed={playback.speed}
+              loop={playback.loop}
+              progress={playback.progress}
+              onTogglePlay={playback.togglePlay}
+              onStop={playback.stop}
+              onStepForward={playback.stepForward}
+              onStepBackward={playback.stepBackward}
+              onJumpToTick={playback.jumpToTick}
+              onSetSpeed={playback.setSpeed}
+              onToggleLoop={playback.toggleLoop}
+            />
+
+            {/* Process State Monitor - moved above terminal */}
+            <QueueInspector
+              events={events}
+              currentTick={run.status === 'running' ? liveStats.currentTick : playback.currentTick}
+            />
+
+            {/* Terminal-Style Event Log */}
+            <TerminalLog events={events} />
+
+            <EventList events={playback.currentEvents} />
+
+            {summary && <SummaryTable summary={summary} />}
+          </div>
+
+          {/* Right Column - Console, Controls */}
+          <div className="space-y-6">
+
+            <LiveConsole messages={stderrMessages} />
+
+            <RunControls
+              runId={id}
+              runStatus={run.status}
+              onUpdate={loadRunData}
+            />
+          </div>
         </div>
       </div>
     </div>

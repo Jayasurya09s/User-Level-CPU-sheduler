@@ -1,0 +1,32 @@
+[
+  {
+    "arrival": 0,
+    "burst": 5,
+    "priority": 3
+  },
+  {
+    "arrival": 2,
+    "burst": 1,
+    "priority": 3
+  },
+  {
+    "arrival": 3,
+    "burst": 2,
+    "priority": 2
+  },
+  {
+    "arrival": 4,
+    "burst": 2,
+    "priority": 2
+  },
+  {
+    "arrival": 5,
+    "burst": 2,
+    "priority": 3
+  },
+  {
+    "arrival": 5,
+    "burst": 8,
+    "priority": 1
+  }
+]

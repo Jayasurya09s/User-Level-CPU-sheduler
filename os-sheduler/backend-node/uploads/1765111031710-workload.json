@@ -1,0 +1,5 @@
+[
+  {"arrival":0,"burst":8,"priority":1},
+  {"arrival":1,"burst":4,"priority":2},
+  {"arrival":2,"burst":9,"priority":1}
+]

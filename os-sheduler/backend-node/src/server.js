@@ -114,19 +114,47 @@ app.post("/runs/start", upload.single("file"), async (req, res) => {
     );
 
     const run_id = row.lastID;
+    // build spawn args (use validated 'algo' as primary)
+    const spawnArgs = (passedArgs && passedArgs.length) ? passedArgs.slice() : [algo];
 
-    // Build scheduler spawn args
-    const spawnArgs = passedArgs.length ? passedArgs : [algo];
-    if (meta.uploaded_file) spawnArgs.push(meta.uploaded_file);
+    // If a file was uploaded, attach its path so scheduler can read it
+    if (meta && meta.uploaded_file) {
+      spawnArgs.push(meta.uploaded_file);
+    } else if (meta && meta.workload_json) {
+      // write the JSON payload to a new file in uploads and push path to args
+      const tempName = `${Date.now()}-workload.json`;
+      const tempPath = path.join(UPLOAD_DIR, tempName);
+      try {
+        fs.writeFileSync(tempPath, meta.workload_json, { encoding: 'utf8' });
+        spawnArgs.push(tempPath);
+        // record in meta which file we created
+        meta.uploaded_file = tempPath;
+        // update DB meta_json (optional)
+        await runAsync(`UPDATE runs SET meta_json = ? WHERE id = ?`, [JSON.stringify(meta), run_id]);
+      } catch (err) {
+        console.error('failed to write workload file', err);
+      }
+    }
 
+    // spawn scheduler binary (make sure SCHEDULER_BIN exists)
+    if (!fs.existsSync(SCHEDULER_BIN)) {
+      console.error('scheduler binary not found at', SCHEDULER_BIN);
+      // mark run as error
+      await runAsync(`UPDATE runs SET status = ? WHERE id = ?`, ['error', run_id]);
+      return res.status(500).json({ error: 'scheduler binary not found', path: SCHEDULER_BIN });
+    }
+
+    // spawn the scheduler
     const proc = spawn(SCHEDULER_BIN, spawnArgs, {
       cwd: path.dirname(SCHEDULER_BIN),
-      env: process.env
+      env: process.env,
     });
 
-    runs.set(run_id, { proc, status: "running" });
+    // keep the proc in the in-memory map
+    runs.set(run_id, { proc, status: 'running' });
 
-    // Read scheduler stdout
+
+     // Read scheduler stdout
     const rl = readline.createInterface({ input: proc.stdout });
 
     rl.on("line", async line => {

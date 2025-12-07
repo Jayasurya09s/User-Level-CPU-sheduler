@@ -1,0 +1,3 @@
+    { "pid": 2, "arrival": 2, "burst": 3, "start": 8, "finish": 10, "waiting": 5, "turnaround": 8, "response": 6 }
+  ],
+  "averages": {

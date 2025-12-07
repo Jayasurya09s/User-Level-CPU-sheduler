@@ -1,0 +1,60 @@
+rr scheduler test starting...
+Using quantum = 2
+{ "event": "job_resumed", "tick": 0, "pid": 1, "state": "0", "pid":1, "arrival":0 }
+{ "event": "tick", "tick": 1 }
+{ "event": "context_switch", "tick": 1, "pid": 1, "state": "2", "arrival": 0, "burst": 5, "remaining": 5, "priority": 1 }
+{ "event": "job_started", "tick": 1, "pid": 1, "state": "2", "arrival": 0, "burst": 5, "remaining": 5, "priority": 1 }
+{ "event": "gantt_slice", "tick": 1, "pid": 1, "state": "2", "pid":1, "remaining":4, "quantum_left":1 }
+{ "event": "tick", "tick": 2 }
+{ "event": "gantt_slice", "tick": 2, "pid": 1, "state": "2", "pid":1, "remaining":3, "quantum_left":0 }
+{ "event": "job_preempted", "tick": 2, "pid": 1, "state": "2", "reason":"quantum" }
+{ "event": "context_switch", "tick": 2, "pid": 1, "state": "2", "arrival": 0, "burst": 5, "remaining": 3, "priority": 1 }
+{ "event": "job_resumed", "tick": 2, "pid": 1, "state": "2", "arrival": 0, "burst": 5, "remaining": 3, "priority": 1 }
+{ "event": "job_resumed", "tick": 2, "pid": 2, "state": "0", "pid":2, "arrival":2 }
+{ "event": "tick", "tick": 3 }
+{ "event": "gantt_slice", "tick": 3, "pid": 1, "state": "2", "pid":1, "remaining":2, "quantum_left":1 }
+{ "event": "tick", "tick": 4 }
+{ "event": "gantt_slice", "tick": 4, "pid": 1, "state": "2", "pid":1, "remaining":1, "quantum_left":0 }
+{ "event": "job_preempted", "tick": 4, "pid": 1, "state": "2", "reason":"quantum" }
+{ "event": "context_switch", "tick": 4, "pid": 2, "state": "2", "arrival": 2, "burst": 3, "remaining": 3, "priority": 3 }
+{ "event": "job_started", "tick": 4, "pid": 2, "state": "2", "arrival": 2, "burst": 3, "remaining": 3, "priority": 3 }
+{ "event": "job_resumed", "tick": 4, "pid": 3, "state": "0", "pid":3, "arrival":4 }
+{ "event": "tick", "tick": 5 }
+{ "event": "gantt_slice", "tick": 5, "pid": 2, "state": "2", "pid":2, "remaining":2, "quantum_left":1 }
+{ "event": "tick", "tick": 6 }
+{ "event": "gantt_slice", "tick": 6, "pid": 2, "state": "2", "pid":2, "remaining":1, "quantum_left":0 }
+{ "event": "job_preempted", "tick": 6, "pid": 2, "state": "2", "reason":"quantum" }
+{ "event": "context_switch", "tick": 6, "pid": 1, "state": "2", "arrival": 0, "burst": 5, "remaining": 1, "priority": 1 }
+{ "event": "job_resumed", "tick": 6, "pid": 1, "state": "2", "arrival": 0, "burst": 5, "remaining": 1, "priority": 1 }
+{ "event": "tick", "tick": 7 }
+{ "event": "gantt_slice", "tick": 7, "pid": 1, "state": "2", "pid":1, "remaining":0, "quantum_left":1 }
+{ "event": "job_finished", "tick": 7, "pid": 1, "state": "4", "arrival": 0, "burst": 5, "remaining": 0, "priority": 1 }
+{ "event": "tick", "tick": 8 }
+{ "event": "context_switch", "tick": 8, "pid": 3, "state": "2", "arrival": 4, "burst": 2, "remaining": 2, "priority": 2 }
+{ "event": "job_started", "tick": 8, "pid": 3, "state": "2", "arrival": 4, "burst": 2, "remaining": 2, "priority": 2 }
+{ "event": "gantt_slice", "tick": 8, "pid": 3, "state": "2", "pid":3, "remaining":1, "quantum_left":1 }
+{ "event": "tick", "tick": 9 }
+{ "event": "gantt_slice", "tick": 9, "pid": 3, "state": "2", "pid":3, "remaining":0, "quantum_left":0 }
+{ "event": "job_finished", "tick": 9, "pid": 3, "state": "4", "arrival": 4, "burst": 2, "remaining": 0, "priority": 2 }
+{ "event": "tick", "tick": 10 }
+{ "event": "context_switch", "tick": 10, "pid": 2, "state": "2", "arrival": 2, "burst": 3, "remaining": 1, "priority": 3 }
+{ "event": "job_resumed", "tick": 10, "pid": 2, "state": "2", "arrival": 2, "burst": 3, "remaining": 1, "priority": 3 }
+{ "event": "gantt_slice", "tick": 10, "pid": 2, "state": "2", "pid":2, "remaining":0, "quantum_left":1 }
+{ "event": "job_finished", "tick": 10, "pid": 2, "state": "4", "arrival": 2, "burst": 3, "remaining": 0, "priority": 3 }
+rr scheduler test completed. Injected 3 processes.
+{
+  "algorithm": "rr",
+  "injected": 3,
+  "ticks": 10,
+  "context_switches": 6,
+  "processes": [
+    { "pid": 1, "arrival": 0, "burst": 5, "start": 1, "finish": 7, "waiting": 2, "turnaround": 7, "response": 1 },
+    { "pid": 3, "arrival": 4, "burst": 2, "start": 8, "finish": 9, "waiting": 3, "turnaround": 5, "response": 4 },
+    { "pid": 2, "arrival": 2, "burst": 3, "start": 4, "finish": 10, "waiting": 5, "turnaround": 8, "response": 2 }
+  ],
+  "averages": {
+    "waiting_time": 3.333,
+    "turnaround_time": 6.667,
+    "response_time": 2.333
+  }
+}

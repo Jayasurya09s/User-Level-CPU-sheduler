@@ -531,16 +531,13 @@ Built for educational purposes to demonstrate CPU scheduling concepts in Operati
 ## 📊 Screenshots
 
 ### Live Simulation Dashboard
-- Real-time Gantt chart with second-by-second updates
-- Process state monitor showing running/ready/pending/completed
-- Terminal-style event log with color-coded symbols
-- Live performance metrics
+<img width="1231" height="1022" alt="image" src="https://github.com/user-attachments/assets/313b45b3-f24c-4446-b158-6954c9fe6d88" />
+<img width="1231" height="1022" alt="image" src="https://github.com/user-attachments/assets/ce96d6da-231e-4e21-a8d0-e243f402e098" />
+<img width="1231" height="1022" alt="image" src="https://github.com/user-attachments/assets/777e8e7f-77d2-43d9-b2cb-d2bb9b733398" />
+<img width="1231" height="1022" alt="image" src="https://github.com/user-attachments/assets/d47d56c8-19b5-4833-a194-37ac63b8ea75" />
+
 
 ### Run History & Comparison
-- Compare multiple algorithm performances
-- Visualize average turnaround and waiting times
-- Export results to CSV/JSON
-
----
+<img width="1231" height="1022" alt="image" src="https://github.com/user-attachments/assets/9240e94f-20c6-4c17-9cfd-bbc8c4eda6f1" />
 
 **⭐ Star this repository if you find it helpful!**
